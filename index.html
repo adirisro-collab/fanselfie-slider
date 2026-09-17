@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>HK Nitra – FANSELFIE</title>
+
+<style>
+* {
+    box-sizing: border-box;
+}
+
+html, body {
+    margin: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: #000;
+}
+
+body {
+    font-family: Arial, sans-serif;
+}
+
+/* Celá obrazovka */
+#screen {
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+    background: #000;
+    overflow: hidden;
+}
+
+/* Priestor pre fotografiu */
+#photo-area {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+
+    /* približne podľa tvojej 1920x1080 šablóny */
+    bottom: 142px;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #000;
+}
+
+/* Fotografia */
+#fan-photo {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    opacity: 1;
+    transition: opacity 0.5s ease;
+}
+
+/* Spodná FANSELFIE grafika */
+#template {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+
+    width: 100%;
+    height: auto;
+
+    z-index: 10;
+    pointer-events: none;
+}
+
+/* Stav pri načítavaní */
+#status {
+    position: absolute;
+    inset: 0;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    color: white;
+    font-size: 32px;
+    letter-spacing: 2px;
+
+    z-index: 2;
+}
+
+.hidden {
+    display: none !important;
+}
+</style>
+</head>
+
+<body>
+
+<div id="screen">
+
+    <div id="photo-area">
+        <div id="status">NAČÍTAVAM FANSELFIE...</div>
+        <img id="fan-photo" alt="">
+    </div>
+
+    <img id="template" src="template.png" alt="FANSELFIE">
+
+</div>
+
+<script>
+
+const CSV_URL =
+"https://docs.google.com/spreadsheets/d/e/2PACX-1vTAOV5g4WpKAF_C5NPsrGnOlcSz66F92fI0PKY6DjgZkF6APObWtHkuW6MJivb7f8dqnVD1x09_JwI2/pub?gid=0&single=true&output=csv";
+
+/* 5 sekúnd na jednu fotku */
+const SLIDE_TIME = 5000;
+
+/* každých 15 sekúnd skontroluje nové fotky */
+const REFRESH_TIME = 15000;
+
+let photos = [];
+let currentIndex = 0;
+
+const photoElement = document.getElementById("fan-photo");
+const statusElement = document.getElementById("status");
+
+
+/* Jednoduché načítanie CSV */
+function parseCSV(text) {
+
+    const rows = [];
+    let row = [];
+    let value = "";
+    let insideQuotes = false;
+
+    for (let i = 0; i < text.length; i++) {
+
+        const char = text[i];
+
+        if (char === '"') {
+
+            if (insideQuotes && text[i + 1] === '"') {
+                value += '"';
+                i++;
+            } else {
+                insideQuotes = !insideQuotes;
+            }
+
+        } else if (char === "," && !insideQuotes) {
+
+            row.push(value);
+            value = "";
+
+        } else if (
+            (char === "\n" || char === "\r") &&
+            !insideQuotes
+        ) {
+
+            if (char === "\r" && text[i + 1] === "\n") {
+                i++;
+            }
+
+            row.push(value);
+
+            if (row.some(cell => cell.trim() !== "")) {
+                rows.push(row);
+            }
+
+            row = [];
+            value = "";
+
+        } else {
+
+            value += char;
+
+        }
+    }
+
+    if (value || row.length) {
+        row.push(value);
+        rows.push(row);
+    }
+
+    return rows;
+}
+
+
+/* Načíta fotky zo Sheet */
+async function loadPhotos() {
+
+    try {
+
+        const response = await fetch(
+            CSV_URL + "&cache=" + Date.now(),
+            { cache: "no-store" }
+        );
+
+        const text = await response.text();
+        const rows = parseCSV(text);
+
+        if (rows.length < 2) return;
+
+        /*
+        Stĺpec D = index 3
+        Prvý riadok je hlavička.
+        */
+
+        const newPhotos = rows
+            .slice(1)
+            .map(row => row[3] ? row[3].trim() : "")
+            .filter(url => url.startsWith("http"))
+            .reverse();
+
+        if (!newPhotos.length) {
+
+            photos = [];
+
+            photoElement.src = "";
+            statusElement.textContent = "ZATIAĽ ŽIADNE FANSELFIE";
+            statusElement.classList.remove("hidden");
+
+            return;
+        }
+
+
+        /* Ak pribudla nová najnovšia fotografia */
+        if (
+            photos.length > 0 &&
+            newPhotos[0] !== photos[0]
+        ) {
+
+            photos = newPhotos;
+            currentIndex = 0;
+
+            showPhoto();
+
+        } else {
+
+            photos = newPhotos;
+
+            if (!photoElement.src) {
+                currentIndex = 0;
+                showPhoto();
+            }
+
+        }
+
+    } catch (error) {
+
+        console.error(error);
+
+        statusElement.textContent =
+            "FOTKY SA NEPODARILO NAČÍTAŤ";
+
+        statusElement.classList.remove("hidden");
+    }
+}
+
+
+/* Zobraz fotografiu */
+function showPhoto() {
+
+    if (!photos.length) return;
+
+    if (currentIndex >= photos.length) {
+        currentIndex = 0;
+    }
+
+    photoElement.style.opacity = 0;
+
+    setTimeout(() => {
+
+        photoElement.src = photos[currentIndex];
+
+        photoElement.onload = () => {
+
+            statusElement.classList.add("hidden");
+            photoElement.style.opacity = 1;
+
+        };
+
+        currentIndex++;
+
+    }, 500);
+}
+
+
+/* Automatické prepínanie */
+setInterval(showPhoto, SLIDE_TIME);
+
+
+/* Kontrola nových fotiek */
+setInterval(loadPhotos, REFRESH_TIME);
+
+
+/* Prvé načítanie */
+loadPhotos();
+
+</script>
+
+</body>
+</html>
