@@ -19,11 +19,6 @@ html, body {
     background: #000;
 }
 
-body {
-    font-family: Arial, sans-serif;
-}
-
-/* Celá obrazovka */
 #screen {
     position: relative;
     width: 100vw;
@@ -32,58 +27,54 @@ body {
     overflow: hidden;
 }
 
-/* Priestor pre fotografiu */
+/* Priestor pre fotografie */
 #photo-area {
     position: absolute;
     top: 0;
     left: 0;
     right: 0;
-
-    /* približne podľa tvojej 1920x1080 šablóny */
     bottom: 142px;
-
-    display: flex;
-    align-items: center;
-    justify-content: center;
     background: #000;
+    overflow: hidden;
 }
 
-/* Fotografia */
-#fan-photo {
+/* Dve vrstvy fotografií */
+.fan-photo {
+    position: absolute;
+    inset: 0;
     width: 100%;
     height: 100%;
     object-fit: contain;
-    opacity: 1;
-    transition: opacity 0.5s ease;
+    opacity: 0;
+    transition: opacity 0.6s ease;
 }
 
-/* Spodná FANSELFIE grafika */
+.fan-photo.active {
+    opacity: 1;
+}
+
+/* FANSELFIE spodná grafika */
 #template {
     position: absolute;
     bottom: 0;
     left: 0;
-
     width: 100%;
     height: auto;
-
-    z-index: 10;
+    z-index: 20;
     pointer-events: none;
 }
 
-/* Stav pri načítavaní */
 #status {
     position: absolute;
     inset: 0;
-
     display: flex;
     align-items: center;
     justify-content: center;
-
     color: white;
+    font-family: Arial, sans-serif;
     font-size: 32px;
     letter-spacing: 2px;
-
-    z-index: 2;
+    z-index: 1;
 }
 
 .hidden {
@@ -98,7 +89,9 @@ body {
 
     <div id="photo-area">
         <div id="status">NAČÍTAVAM FANSELFIE...</div>
-        <img id="fan-photo" alt="">
+
+        <img id="photoA" class="fan-photo" alt="">
+        <img id="photoB" class="fan-photo" alt="">
     </div>
 
     <img id="template" src="template.png" alt="FANSELFIE">
@@ -110,20 +103,26 @@ body {
 const CSV_URL =
 "https://docs.google.com/spreadsheets/d/e/2PACX-1vTAOV5g4WpKAF_C5NPsrGnOlcSz66F92fI0PKY6DjgZkF6APObWtHkuW6MJivb7f8dqnVD1x09_JwI2/pub?gid=0&single=true&output=csv";
 
-/* 5 sekúnd na jednu fotku */
+/* čas jednej fotky */
 const SLIDE_TIME = 5000;
 
-/* každých 15 sekúnd skontroluje nové fotky */
-const REFRESH_TIME = 15000;
+/* kontrola nových fotiek */
+const REFRESH_TIME = 10000;
+
+/* fade prechod */
+const FADE_TIME = 600;
 
 let photos = [];
 let currentIndex = 0;
+let activeLayer = "A";
+let changing = false;
+let initialized = false;
 
-const photoElement = document.getElementById("fan-photo");
+const photoA = document.getElementById("photoA");
+const photoB = document.getElementById("photoB");
 const statusElement = document.getElementById("status");
 
 
-/* Jednoduché načítanie CSV */
 function parseCSV(text) {
 
     const rows = [];
@@ -183,7 +182,7 @@ function parseCSV(text) {
 }
 
 
-/* Načíta fotky zo Sheet */
+/* Načíta aktuálny zoznam zo Sheets */
 async function loadPhotos() {
 
     try {
@@ -193,15 +192,12 @@ async function loadPhotos() {
             { cache: "no-store" }
         );
 
+        if (!response.ok) {
+            throw new Error("CSV sa nepodarilo načítať");
+        }
+
         const text = await response.text();
         const rows = parseCSV(text);
-
-        if (rows.length < 2) return;
-
-        /*
-        Stĺpec D = index 3
-        Prvý riadok je hlavička.
-        */
 
         const newPhotos = rows
             .slice(1)
@@ -212,82 +208,160 @@ async function loadPhotos() {
         if (!newPhotos.length) {
 
             photos = [];
-
-            photoElement.src = "";
             statusElement.textContent = "ZATIAĽ ŽIADNE FANSELFIE";
             statusElement.classList.remove("hidden");
-
             return;
         }
 
+        const previousNewest = photos.length ? photos[0] : null;
 
-        /* Ak pribudla nová najnovšia fotografia */
-        if (
-            photos.length > 0 &&
-            newPhotos[0] !== photos[0]
-        ) {
+        photos = newPhotos;
 
-            photos = newPhotos;
+        /* Pri prvom otvorení vždy začni najnovšou */
+        if (!initialized) {
+
+            initialized = true;
             currentIndex = 0;
 
-            showPhoto();
+            await showPhoto(photos[0]);
 
-        } else {
+            currentIndex = 1;
+            return;
+        }
 
-            photos = newPhotos;
+        /*
+        Ak počas premietania pribudla nová fotka,
+        zobraz ju ako ďalšiu.
+        */
+        if (previousNewest && photos[0] !== previousNewest) {
 
-            if (!photoElement.src) {
-                currentIndex = 0;
-                showPhoto();
-            }
+            currentIndex = 0;
 
+            await showPhoto(photos[0]);
+
+            currentIndex = 1;
         }
 
     } catch (error) {
 
         console.error(error);
 
-        statusElement.textContent =
-            "FOTKY SA NEPODARILO NAČÍTAŤ";
-
-        statusElement.classList.remove("hidden");
+        /*
+        Ak už fotografia beží, pri dočasnej chybe
+        ju necháme na obrazovke.
+        */
+        if (!initialized) {
+            statusElement.textContent =
+                "FOTKY SA NEPODARILO NAČÍTAŤ";
+            statusElement.classList.remove("hidden");
+        }
     }
 }
 
 
-/* Zobraz fotografiu */
-function showPhoto() {
+/* Bezpečne načíta obrázok ešte pred zobrazením */
+function preloadImage(url) {
 
-    if (!photos.length) return;
+    return new Promise((resolve, reject) => {
+
+        const img = new Image();
+
+        img.onload = () => resolve(url);
+        img.onerror = reject;
+        img.src = url;
+    });
+}
+
+
+/* Plynulé prepnutie bez čiernej obrazovky */
+async function showPhoto(url) {
+
+    if (!url || changing) return;
+
+    changing = true;
+
+    try {
+
+        /*
+        Najskôr sa obrázok kompletne stiahne.
+        Stará fotografia zatiaľ zostáva viditeľná.
+        */
+        await preloadImage(url);
+
+        const current =
+            activeLayer === "A" ? photoA : photoB;
+
+        const next =
+            activeLayer === "A" ? photoB : photoA;
+
+        next.src = url;
+
+        /*
+        Počkáme, kým browser obrázok naozaj
+        pripraví na vykreslenie.
+        */
+        if (next.decode) {
+            try {
+                await next.decode();
+            } catch (e) {}
+        }
+
+        statusElement.classList.add("hidden");
+
+        /* nová fotografia nad starou */
+        next.style.zIndex = "3";
+        current.style.zIndex = "2";
+
+        next.classList.add("active");
+
+        /*
+        Starú schováme až po fade.
+        Počas celého prechodu je teda vždy
+        minimálne jedna fotografia viditeľná.
+        */
+        setTimeout(() => {
+
+            current.classList.remove("active");
+            current.style.zIndex = "1";
+
+        }, FADE_TIME);
+
+        activeLayer =
+            activeLayer === "A" ? "B" : "A";
+
+    } catch (error) {
+
+        console.error("Fotka sa nepodarila načítať:", url);
+
+    } finally {
+
+        changing = false;
+    }
+}
+
+
+/* Ďalšia fotografia */
+async function nextPhoto() {
+
+    if (!photos.length || changing) return;
 
     if (currentIndex >= photos.length) {
         currentIndex = 0;
     }
 
-    photoElement.style.opacity = 0;
+    const url = photos[currentIndex];
 
-    setTimeout(() => {
+    currentIndex++;
 
-        photoElement.src = photos[currentIndex];
-
-        photoElement.onload = () => {
-
-            statusElement.classList.add("hidden");
-            photoElement.style.opacity = 1;
-
-        };
-
-        currentIndex++;
-
-    }, 500);
+    await showPhoto(url);
 }
 
 
-/* Automatické prepínanie */
-setInterval(showPhoto, SLIDE_TIME);
+/* Slider */
+setInterval(nextPhoto, SLIDE_TIME);
 
 
-/* Kontrola nových fotiek */
+/* Priebežne kontroluj nové Tally fotky */
 setInterval(loadPhotos, REFRESH_TIME);
 
 
