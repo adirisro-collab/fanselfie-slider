@@ -3,18 +3,31 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
 <title>HK Nitra – FANSELFIE</title>
 
 <style>
-* { box-sizing: border-box; }
 
-html, body {
+* {
+    box-sizing: border-box;
+}
+
+html,
+body {
     margin: 0;
+    padding: 0;
     width: 100%;
     height: 100%;
     overflow: hidden;
     background: #000;
 }
+
+body {
+    font-family: Arial, sans-serif;
+}
+
+
+/* CELÁ OBRAZOVKA */
 
 #screen {
     position: relative;
@@ -24,342 +37,890 @@ html, body {
     overflow: hidden;
 }
 
+
+/* PRIESTOR PRE FOTKU */
+
 #photo-area {
     position: absolute;
+
     top: 0;
     left: 0;
     right: 0;
+
+    /* priestor pre spodnú FANSELFIE grafiku */
     bottom: 142px;
+
     background: #000;
     overflow: hidden;
 }
 
+
+/* FOTKY */
+
 .fan-photo {
+
     position: absolute;
-    inset: 0;
+
+    top: 0;
+    left: 0;
+
     width: 100%;
     height: 100%;
+
+    /*
+    Fotku NEOREŽE.
+    Celá fotografia zostane viditeľná.
+    */
     object-fit: contain;
+
     opacity: 0;
-    transition: opacity 0.5s ease;
+
+    transition:
+        opacity 0.5s ease;
+
+    background: #000;
 }
+
 
 .fan-photo.active {
     opacity: 1;
 }
 
+
+/* SPODNÁ FANSELFIE ŠABLÓNA */
+
 #template {
+
     position: absolute;
+
     bottom: 0;
     left: 0;
+
     width: 100%;
     height: auto;
+
     z-index: 20;
+
     pointer-events: none;
 }
 
+
+/* TEXT PRI PRVOM NAČÍTANÍ */
+
 #status {
+
     position: absolute;
+
     inset: 0;
+
     display: flex;
+
     align-items: center;
     justify-content: center;
-    color: white;
+
+    color: #fff;
+
     font-family: Arial, sans-serif;
+
     font-size: 32px;
+
     letter-spacing: 2px;
+
     z-index: 1;
 }
+
 
 .hidden {
     display: none !important;
 }
+
 </style>
 </head>
 
+
 <body>
+
 
 <div id="screen">
 
-    <div id="photo-area">
-        <div id="status">NAČÍTAVAM FANSELFIE...</div>
 
-        <img id="photoA" class="fan-photo" alt="">
-        <img id="photoB" class="fan-photo" alt="">
+    <div id="photo-area">
+
+
+        <div id="status">
+            NAČÍTAVAM FANSELFIE...
+        </div>
+
+
+        <!--
+        Používame dve vrstvy.
+        Kým sa nová fotka načítava,
+        stará zostáva na obrazovke.
+        -->
+
+        <img
+            id="photoA"
+            class="fan-photo"
+            alt=""
+        >
+
+        <img
+            id="photoB"
+            class="fan-photo"
+            alt=""
+        >
+
+
     </div>
 
-    <img id="template" src="template.png" alt="FANSELFIE">
+
+    <!--
+    Tvoja FANSELFIE grafika.
+    Súbor musí byť v GitHube ako template.png
+    -->
+
+    <img
+        id="template"
+        src="template.png"
+        alt="FANSELFIE"
+    >
+
 
 </div>
 
+
+
 <script>
+
+
+/* =========================================
+   NASTAVENIA
+========================================= */
+
 
 const CSV_URL =
 "https://docs.google.com/spreadsheets/d/e/2PACX-1vTAOV5g4WpKAF_C5NPsrGnOlcSz66F92fI0PKY6DjgZkF6APObWtHkuW6MJivb7f8dqnVD1x09_JwI2/pub?gid=0&single=true&output=csv";
 
+
+/*
+Ako dlho je fotografia na obrazovke.
+5000 = 5 sekúnd.
+*/
+
 const SLIDE_TIME = 5000;
+
+
+/*
+Ako často kontrolujeme,
+či v Google Sheets pribudli nové fotky.
+*/
+
 const REFRESH_TIME = 5000;
 
+
+/*
+Dĺžka plynulého prechodu.
+*/
+
+const FADE_TIME = 500;
+
+
+
+/* =========================================
+   PREMENNÉ
+========================================= */
+
+
 let photos = [];
+
 let currentIndex = 0;
+
 let activeLayer = "A";
-let changing = false;
+
 let initialized = false;
 
-const photoA = document.getElementById("photoA");
-const photoB = document.getElementById("photoB");
-const status = document.getElementById("status");
+let slideTimer = null;
+
+let isChanging = false;
+
+
+const photoA =
+    document.getElementById("photoA");
+
+const photoB =
+    document.getElementById("photoB");
+
+const status =
+    document.getElementById("status");
+
+
+
+/* =========================================
+   ČÍTANIE CSV
+========================================= */
 
 
 function parseCSV(text) {
 
+
     const rows = [];
+
     let row = [];
+
     let value = "";
+
     let quoted = false;
 
-    for (let i = 0; i < text.length; i++) {
+
+    for (
+        let i = 0;
+        i < text.length;
+        i++
+    ) {
+
 
         const c = text[i];
 
+
         if (c === '"') {
 
-            if (quoted && text[i + 1] === '"') {
+
+            if (
+                quoted &&
+                text[i + 1] === '"'
+            ) {
+
                 value += '"';
+
                 i++;
+
             } else {
+
                 quoted = !quoted;
+
             }
 
-        } else if (c === "," && !quoted) {
+
+        }
+
+
+        else if (
+            c === "," &&
+            !quoted
+        ) {
+
 
             row.push(value);
+
             value = "";
 
-        } else if ((c === "\n" || c === "\r") && !quoted) {
 
-            if (c === "\r" && text[i + 1] === "\n") i++;
+        }
+
+
+        else if (
+            (
+                c === "\n" ||
+                c === "\r"
+            ) &&
+            !quoted
+        ) {
+
+
+            if (
+                c === "\r" &&
+                text[i + 1] === "\n"
+            ) {
+
+                i++;
+
+            }
+
 
             row.push(value);
 
-            if (row.some(cell => cell.trim() !== "")) {
+
+            if (
+                row.some(
+                    cell =>
+                        cell.trim() !== ""
+                )
+            ) {
+
                 rows.push(row);
+
             }
+
 
             row = [];
+
             value = "";
 
-        } else {
+
+        }
+
+
+        else {
+
 
             value += c;
+
+
         }
+
     }
 
-    if (value || row.length) {
+
+    if (
+        value ||
+        row.length
+    ) {
+
+
         row.push(value);
+
         rows.push(row);
+
+
     }
+
 
     return rows;
+
 }
 
 
-function displayPhoto(url) {
 
-    if (!url || changing) return;
-
-    changing = true;
-
-    const current =
-        activeLayer === "A" ? photoA : photoB;
-
-    const next =
-        activeLayer === "A" ? photoB : photoA;
-
-    /*
-    Novú fotku načítame do neviditeľnej vrstvy.
-    Aktuálna zostáva celý čas na obrazovke.
-    */
-
-    next.classList.remove("active");
-
-    next.onload = function () {
-
-        status.classList.add("hidden");
-
-        next.style.zIndex = "3";
-        current.style.zIndex = "2";
-
-        /*
-        Až TERAZ, keď je nová fotka načítaná,
-        ju zobrazíme.
-        */
-
-        requestAnimationFrame(() => {
-
-            next.classList.add("active");
-
-            setTimeout(() => {
-
-                current.classList.remove("active");
-                current.style.zIndex = "1";
-
-                activeLayer =
-                    activeLayer === "A" ? "B" : "A";
-
-                changing = false;
-
-            }, 550);
-
-        });
-    };
+/* =========================================
+   ZOBRAZENIE FOTKY
+========================================= */
 
 
-    next.onerror = function () {
-
-        console.log("Nepodarilo sa načítať:", url);
-
-        changing = false;
-
-        /*
-        Ak jedna fotka nefunguje,
-        slider nezostane zaseknutý.
-        */
-        setTimeout(nextPhoto, 500);
-    };
+function showPhoto(url) {
 
 
-    /*
-    Toto spustí samotné načítanie.
-    */
-    next.src = url;
+    return new Promise(
+        (resolve) => {
+
+
+            if (!url) {
+
+                resolve();
+
+                return;
+
+            }
+
+
+            if (isChanging) {
+
+                resolve();
+
+                return;
+
+            }
+
+
+            isChanging = true;
+
+
+
+            /*
+            Zistíme, ktorá vrstva je teraz
+            viditeľná a ktorá je voľná.
+            */
+
+
+            const current =
+                activeLayer === "A"
+                    ? photoA
+                    : photoB;
+
+
+            const next =
+                activeLayer === "A"
+                    ? photoB
+                    : photoA;
+
+
+
+            /*
+            Pripravíme neviditeľnú vrstvu.
+            */
+
+
+            next.classList.remove(
+                "active"
+            );
+
+
+            next.style.zIndex = "1";
+
+
+
+            /*
+            Toto sa spustí AŽ KEĎ
+            je nová fotografia načítaná.
+            */
+
+
+            next.onload = function () {
+
+
+                status.classList.add(
+                    "hidden"
+                );
+
+
+                /*
+                Novú fotku dáme nad starú.
+                */
+
+
+                next.style.zIndex = "3";
+
+                current.style.zIndex = "2";
+
+
+
+                requestAnimationFrame(
+                    () => {
+
+
+                        /*
+                        Plynulo zobraz novú.
+                        */
+
+
+                        next.classList.add(
+                            "active"
+                        );
+
+
+
+                        setTimeout(
+                            () => {
+
+
+                                /*
+                                Až po prechode
+                                skryjeme starú.
+                                */
+
+
+                                current
+                                    .classList
+                                    .remove(
+                                        "active"
+                                    );
+
+
+                                current.style.zIndex =
+                                    "1";
+
+
+                                /*
+                                Nová vrstva je teraz
+                                aktívna.
+                                */
+
+
+                                activeLayer =
+                                    activeLayer === "A"
+                                        ? "B"
+                                        : "A";
+
+
+                                isChanging = false;
+
+
+                                resolve();
+
+
+                            },
+                            FADE_TIME
+                        );
+
+
+                    }
+                );
+
+
+            };
+
+
+
+            /*
+            Ak je URL fotografie chybná,
+            slider sa nezasekne.
+            */
+
+
+            next.onerror = function () {
+
+
+                console.log(
+                    "Preskakujem fotografiu:",
+                    url
+                );
+
+
+                isChanging = false;
+
+
+                resolve();
+
+
+            };
+
+
+
+            /*
+            Spustenie načítania fotografie.
+            */
+
+
+            next.src = url;
+
+
+        }
+    );
+
 }
 
 
-function nextPhoto() {
 
-    if (!photos.length || changing) return;
+/* =========================================
+   ĎALŠIA FOTKA
+========================================= */
 
-    if (currentIndex >= photos.length) {
-        currentIndex = 0;
+
+async function playNext() {
+
+
+    if (!photos.length) {
+
+
+        scheduleNext();
+
+        return;
+
+
     }
 
-    const url = photos[currentIndex];
+
+    if (isChanging) {
+
+
+        scheduleNext();
+
+        return;
+
+
+    }
+
+
+    /*
+    Ak sme na konci zoznamu,
+    začneme znova od najnovšej.
+    */
+
+
+    if (
+        currentIndex >=
+        photos.length
+    ) {
+
+
+        currentIndex = 0;
+
+
+    }
+
+
+    const url =
+        photos[currentIndex];
+
 
     currentIndex++;
 
-    displayPhoto(url);
+
+    await showPhoto(url);
+
+
+    scheduleNext();
+
 }
+
+
+
+/* =========================================
+   ČASOVAČ SLIDERA
+========================================= */
+
+
+function scheduleNext() {
+
+
+    clearTimeout(
+        slideTimer
+    );
+
+
+    slideTimer =
+        setTimeout(
+            playNext,
+            SLIDE_TIME
+        );
+
+}
+
+
+
+/* =========================================
+   NAČÍTANIE GOOGLE SHEET
+========================================= */
 
 
 async function loadPhotos() {
 
+
     try {
 
-        const response = await fetch(
-            CSV_URL + "&t=" + Date.now(),
-            { cache: "no-store" }
-        );
+
+        /*
+        Timestamp zabráni browseru,
+        aby používal starú cache CSV.
+        */
+
+
+        const separator =
+            CSV_URL.includes("?")
+                ? "&"
+                : "?";
+
+
+        const response =
+            await fetch(
+
+                CSV_URL +
+                separator +
+                "t=" +
+                Date.now(),
+
+                {
+                    cache: "no-store"
+                }
+
+            );
+
+
 
         if (!response.ok) {
-            throw new Error("CSV error");
+
+
+            throw new Error(
+                "Google Sheet sa nepodarilo načítať."
+            );
+
+
         }
 
-        const text = await response.text();
-
-        const rows = parseCSV(text);
-
-        const newPhotos = rows
-            .slice(1)
-            .map(row => row[3] ? row[3].trim() : "")
-            .filter(url => url.startsWith("http"))
-            .reverse();
 
 
-        if (!newPhotos.length) {
+        const text =
+            await response.text();
+
+
+        const rows =
+            parseCSV(text);
+
+
+
+        /*
+        Stĺpec D = index 3.
+
+        Prvý riadok je hlavička,
+        preto používame slice(1).
+        */
+
+
+        const freshPhotos =
+            rows
+
+                .slice(1)
+
+                .map(
+                    row =>
+                        row[3]
+                            ? row[3].trim()
+                            : ""
+                )
+
+                .filter(
+                    url =>
+                        url.startsWith(
+                            "http"
+                        )
+                )
+
+                /*
+                Tally pridáva nové riadky dole.
+
+                Reverse znamená:
+                NAJNOVŠIA FOTKA JE PRVÁ.
+                */
+
+                .reverse();
+
+
+
+        /*
+        Žiadne fotografie.
+        */
+
+
+        if (
+            !freshPhotos.length
+        ) {
+
 
             photos = [];
 
+
             if (!initialized) {
+
+
                 status.textContent =
                     "ZATIAĽ ŽIADNE FANSELFIE";
+
+
             }
 
+
             return;
+
         }
 
 
+
         /*
-        PRVÉ SPUSTENIE
+        PRVÉ OTVORENIE SLIDERA
         */
+
 
         if (!initialized) {
 
-            photos = newPhotos;
 
-            initialized = true;
-
-            currentIndex = 1;
-
-            displayPhoto(photos[0]);
-
-            return;
-        }
+            photos =
+                freshPhotos;
 
 
-        /*
-        NOVÁ FOTKA POČAS ZÁPASU
-        */
+            initialized =
+                true;
 
-        const oldNewest = photos[0];
-
-        photos = newPhotos;
-
-        if (photos[0] !== oldNewest) {
 
             /*
-            Nová fotka dostane prioritu.
+            Najnovšiu zobrazíme
+            okamžite.
             */
+
 
             currentIndex = 1;
 
-            if (!changing) {
-                displayPhoto(photos[0]);
-            }
+
+            await showPhoto(
+                photos[0]
+            );
+
+
+            /*
+            A spustíme ďalšie.
+            */
+
+
+            scheduleNext();
+
+
+            return;
+
         }
 
 
-    } catch (error) {
-
-        console.error(error);
 
         /*
-        Ak Google Sheet na chvíľu neodpovie,
-        slider pokračuje s fotkami,
-        ktoré už má načítané.
+        PRI ĎALŠÍCH KONTROLÁCH
+        iba aktualizujeme zoznam.
+
+        NERUŠÍME fotografiu,
+        ktorá sa práve zobrazuje.
         */
 
+
+        photos =
+            freshPhotos;
+
+
+
+    }
+
+
+    catch (error) {
+
+
+        console.error(
+            "Chyba pri načítaní:",
+            error
+        );
+
+
+        /*
+        Ak už máme fotky,
+        slider pokračuje ďalej.
+
+        Výpadok Google Sheets
+        ho teda nezastaví.
+        */
+
+
         if (!initialized) {
+
 
             status.textContent =
                 "ČAKÁM NA FOTKY...";
+
+
         }
+
+
     }
+
 }
 
 
-/* Každých 5 sekúnd ďalšia fotka */
-setInterval(nextPhoto, SLIDE_TIME);
+
+/* =========================================
+   AUTOMATICKÁ KONTROLA NOVÝCH FOTIEK
+========================================= */
 
 
-/* Každých 5 sekúnd kontrola nových */
-setInterval(loadPhotos, REFRESH_TIME);
+setInterval(
+    loadPhotos,
+    REFRESH_TIME
+);
 
 
-/* Štart */
+
+/* =========================================
+   ŠTART
+========================================= */
+
+
 loadPhotos();
 
+
 </script>
+
 
 </body>
 </html>
