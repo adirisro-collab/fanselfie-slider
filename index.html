@@ -3,13 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
 <title>HK Nitra – FANSELFIE</title>
 
 <style>
-* {
-    box-sizing: border-box;
-}
+* { box-sizing: border-box; }
 
 html, body {
     margin: 0;
@@ -27,7 +24,6 @@ html, body {
     overflow: hidden;
 }
 
-/* Priestor pre fotografie */
 #photo-area {
     position: absolute;
     top: 0;
@@ -38,7 +34,6 @@ html, body {
     overflow: hidden;
 }
 
-/* Dve vrstvy fotografií */
 .fan-photo {
     position: absolute;
     inset: 0;
@@ -46,14 +41,13 @@ html, body {
     height: 100%;
     object-fit: contain;
     opacity: 0;
-    transition: opacity 0.6s ease;
+    transition: opacity 0.5s ease;
 }
 
 .fan-photo.active {
     opacity: 1;
 }
 
-/* FANSELFIE spodná grafika */
 #template {
     position: absolute;
     bottom: 0;
@@ -103,14 +97,8 @@ html, body {
 const CSV_URL =
 "https://docs.google.com/spreadsheets/d/e/2PACX-1vTAOV5g4WpKAF_C5NPsrGnOlcSz66F92fI0PKY6DjgZkF6APObWtHkuW6MJivb7f8dqnVD1x09_JwI2/pub?gid=0&single=true&output=csv";
 
-/* čas jednej fotky */
 const SLIDE_TIME = 5000;
-
-/* kontrola nových fotiek */
-const REFRESH_TIME = 10000;
-
-/* fade prechod */
-const FADE_TIME = 600;
+const REFRESH_TIME = 5000;
 
 let photos = [];
 let currentIndex = 0;
@@ -120,7 +108,7 @@ let initialized = false;
 
 const photoA = document.getElementById("photoA");
 const photoB = document.getElementById("photoB");
-const statusElement = document.getElementById("status");
+const status = document.getElementById("status");
 
 
 function parseCSV(text) {
@@ -128,34 +116,29 @@ function parseCSV(text) {
     const rows = [];
     let row = [];
     let value = "";
-    let insideQuotes = false;
+    let quoted = false;
 
     for (let i = 0; i < text.length; i++) {
 
-        const char = text[i];
+        const c = text[i];
 
-        if (char === '"') {
+        if (c === '"') {
 
-            if (insideQuotes && text[i + 1] === '"') {
+            if (quoted && text[i + 1] === '"') {
                 value += '"';
                 i++;
             } else {
-                insideQuotes = !insideQuotes;
+                quoted = !quoted;
             }
 
-        } else if (char === "," && !insideQuotes) {
+        } else if (c === "," && !quoted) {
 
             row.push(value);
             value = "";
 
-        } else if (
-            (char === "\n" || char === "\r") &&
-            !insideQuotes
-        ) {
+        } else if ((c === "\n" || c === "\r") && !quoted) {
 
-            if (char === "\r" && text[i + 1] === "\n") {
-                i++;
-            }
+            if (c === "\r" && text[i + 1] === "\n") i++;
 
             row.push(value);
 
@@ -168,8 +151,7 @@ function parseCSV(text) {
 
         } else {
 
-            value += char;
-
+            value += c;
         }
     }
 
@@ -182,166 +164,79 @@ function parseCSV(text) {
 }
 
 
-/* Načíta aktuálny zoznam zo Sheets */
-async function loadPhotos() {
-
-    try {
-
-        const response = await fetch(
-            CSV_URL + "&cache=" + Date.now(),
-            { cache: "no-store" }
-        );
-
-        if (!response.ok) {
-            throw new Error("CSV sa nepodarilo načítať");
-        }
-
-        const text = await response.text();
-        const rows = parseCSV(text);
-
-        const newPhotos = rows
-            .slice(1)
-            .map(row => row[3] ? row[3].trim() : "")
-            .filter(url => url.startsWith("http"))
-            .reverse();
-
-        if (!newPhotos.length) {
-
-            photos = [];
-            statusElement.textContent = "ZATIAĽ ŽIADNE FANSELFIE";
-            statusElement.classList.remove("hidden");
-            return;
-        }
-
-        const previousNewest = photos.length ? photos[0] : null;
-
-        photos = newPhotos;
-
-        /* Pri prvom otvorení vždy začni najnovšou */
-        if (!initialized) {
-
-            initialized = true;
-            currentIndex = 0;
-
-            await showPhoto(photos[0]);
-
-            currentIndex = 1;
-            return;
-        }
-
-        /*
-        Ak počas premietania pribudla nová fotka,
-        zobraz ju ako ďalšiu.
-        */
-        if (previousNewest && photos[0] !== previousNewest) {
-
-            currentIndex = 0;
-
-            await showPhoto(photos[0]);
-
-            currentIndex = 1;
-        }
-
-    } catch (error) {
-
-        console.error(error);
-
-        /*
-        Ak už fotografia beží, pri dočasnej chybe
-        ju necháme na obrazovke.
-        */
-        if (!initialized) {
-            statusElement.textContent =
-                "FOTKY SA NEPODARILO NAČÍTAŤ";
-            statusElement.classList.remove("hidden");
-        }
-    }
-}
-
-
-/* Bezpečne načíta obrázok ešte pred zobrazením */
-function preloadImage(url) {
-
-    return new Promise((resolve, reject) => {
-
-        const img = new Image();
-
-        img.onload = () => resolve(url);
-        img.onerror = reject;
-        img.src = url;
-    });
-}
-
-
-/* Plynulé prepnutie bez čiernej obrazovky */
-async function showPhoto(url) {
+function displayPhoto(url) {
 
     if (!url || changing) return;
 
     changing = true;
 
-    try {
+    const current =
+        activeLayer === "A" ? photoA : photoB;
 
-        /*
-        Najskôr sa obrázok kompletne stiahne.
-        Stará fotografia zatiaľ zostáva viditeľná.
-        */
-        await preloadImage(url);
+    const next =
+        activeLayer === "A" ? photoB : photoA;
 
-        const current =
-            activeLayer === "A" ? photoA : photoB;
+    /*
+    Novú fotku načítame do neviditeľnej vrstvy.
+    Aktuálna zostáva celý čas na obrazovke.
+    */
 
-        const next =
-            activeLayer === "A" ? photoB : photoA;
+    next.classList.remove("active");
 
-        next.src = url;
+    next.onload = function () {
 
-        /*
-        Počkáme, kým browser obrázok naozaj
-        pripraví na vykreslenie.
-        */
-        if (next.decode) {
-            try {
-                await next.decode();
-            } catch (e) {}
-        }
+        status.classList.add("hidden");
 
-        statusElement.classList.add("hidden");
-
-        /* nová fotografia nad starou */
         next.style.zIndex = "3";
         current.style.zIndex = "2";
 
-        next.classList.add("active");
-
         /*
-        Starú schováme až po fade.
-        Počas celého prechodu je teda vždy
-        minimálne jedna fotografia viditeľná.
+        Až TERAZ, keď je nová fotka načítaná,
+        ju zobrazíme.
         */
-        setTimeout(() => {
 
-            current.classList.remove("active");
-            current.style.zIndex = "1";
+        requestAnimationFrame(() => {
 
-        }, FADE_TIME);
+            next.classList.add("active");
 
-        activeLayer =
-            activeLayer === "A" ? "B" : "A";
+            setTimeout(() => {
 
-    } catch (error) {
+                current.classList.remove("active");
+                current.style.zIndex = "1";
 
-        console.error("Fotka sa nepodarila načítať:", url);
+                activeLayer =
+                    activeLayer === "A" ? "B" : "A";
 
-    } finally {
+                changing = false;
+
+            }, 550);
+
+        });
+    };
+
+
+    next.onerror = function () {
+
+        console.log("Nepodarilo sa načítať:", url);
 
         changing = false;
-    }
+
+        /*
+        Ak jedna fotka nefunguje,
+        slider nezostane zaseknutý.
+        */
+        setTimeout(nextPhoto, 500);
+    };
+
+
+    /*
+    Toto spustí samotné načítanie.
+    */
+    next.src = url;
 }
 
 
-/* Ďalšia fotografia */
-async function nextPhoto() {
+function nextPhoto() {
 
     if (!photos.length || changing) return;
 
@@ -353,19 +248,115 @@ async function nextPhoto() {
 
     currentIndex++;
 
-    await showPhoto(url);
+    displayPhoto(url);
 }
 
 
-/* Slider */
+async function loadPhotos() {
+
+    try {
+
+        const response = await fetch(
+            CSV_URL + "&t=" + Date.now(),
+            { cache: "no-store" }
+        );
+
+        if (!response.ok) {
+            throw new Error("CSV error");
+        }
+
+        const text = await response.text();
+
+        const rows = parseCSV(text);
+
+        const newPhotos = rows
+            .slice(1)
+            .map(row => row[3] ? row[3].trim() : "")
+            .filter(url => url.startsWith("http"))
+            .reverse();
+
+
+        if (!newPhotos.length) {
+
+            photos = [];
+
+            if (!initialized) {
+                status.textContent =
+                    "ZATIAĽ ŽIADNE FANSELFIE";
+            }
+
+            return;
+        }
+
+
+        /*
+        PRVÉ SPUSTENIE
+        */
+
+        if (!initialized) {
+
+            photos = newPhotos;
+
+            initialized = true;
+
+            currentIndex = 1;
+
+            displayPhoto(photos[0]);
+
+            return;
+        }
+
+
+        /*
+        NOVÁ FOTKA POČAS ZÁPASU
+        */
+
+        const oldNewest = photos[0];
+
+        photos = newPhotos;
+
+        if (photos[0] !== oldNewest) {
+
+            /*
+            Nová fotka dostane prioritu.
+            */
+
+            currentIndex = 1;
+
+            if (!changing) {
+                displayPhoto(photos[0]);
+            }
+        }
+
+
+    } catch (error) {
+
+        console.error(error);
+
+        /*
+        Ak Google Sheet na chvíľu neodpovie,
+        slider pokračuje s fotkami,
+        ktoré už má načítané.
+        */
+
+        if (!initialized) {
+
+            status.textContent =
+                "ČAKÁM NA FOTKY...";
+        }
+    }
+}
+
+
+/* Každých 5 sekúnd ďalšia fotka */
 setInterval(nextPhoto, SLIDE_TIME);
 
 
-/* Priebežne kontroluj nové Tally fotky */
+/* Každých 5 sekúnd kontrola nových */
 setInterval(loadPhotos, REFRESH_TIME);
 
 
-/* Prvé načítanie */
+/* Štart */
 loadPhotos();
 
 </script>
